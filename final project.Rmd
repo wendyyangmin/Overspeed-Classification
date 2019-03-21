@@ -1,0 +1,261 @@
+---
+title: "STAT4181 Project Min Yang"
+output:
+  word_document: default
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r}
+library(zoo)
+library(xts)
+library(lubridate)
+library(tidyverse)
+library(forecast)
+```
+
+```{r}
+electricity <-read.table("C:/Users/yangm/Desktop/data.txt", sep=";",header=T,stringsAsFactors=FALSE)
+```
+
+```{r}
+data<-electricity[,c(1,3,7:9)]
+```
+
+```{r}
+str(data)
+```
+
+```{r}
+#fit missing data with previous data 
+NAs <- data == "?"
+is.na(data)[NAs] <- TRUE 
+data$Global_active_power <- na.locf(data$Global_active_power, fromLast = FALSE)
+data$Sub_metering_1 <- na.locf(data$Sub_metering_1, fromLast = FALSE)
+data$Sub_metering_2 <- na.locf(data$Sub_metering_2, fromLast = FALSE)
+data$Sub_metering_3 <- na.locf(data$Sub_metering_3, fromLast = FALSE)
+```
+
+```{r}
+data$Date <-dmy(data$Date)
+data$Global_active_power <-as.numeric(data$Global_active_power)
+data$Sub_metering_1 <-as.numeric(data$Sub_metering_1)
+data$Sub_metering_2 <-as.numeric(data$Sub_metering_2)
+data$Sub_metering_3 <-as.numeric(data$Sub_metering_3)
+```
+
+```{r}
+str(data)
+```
+```{r}
+power <- zoo(data$Global_active_power,order.by = data$Date)
+str(power)
+```
+
+```{r}
+powerxts <-as.xts(power)
+str(powerxts)
+```
+
+```{r}
+powerm<- apply.weekly(powerxts,FUN=mean)
+head(powerm)
+str(powerm)
+length(powerm)
+```
+
+```{r}
+one <- zoo(data$Sub_metering_1,order.by = data$Date)
+onexts <-as.xts(one)
+onem<- apply.weekly(onexts,FUN=mean)
+head(onem)
+```
+
+```{r}
+two<- zoo(data$Sub_metering_2,order.by = data$Date)
+twoxts <-as.xts(two)
+twom<- apply.weekly(twoxts,FUN=mean)
+head(twom)
+```
+
+```{r}
+three <- zoo(data$Sub_metering_3,order.by = data$Date)
+threexts <-as.xts(three)
+threem<- apply.weekly(threexts,FUN=mean)
+head(threem)
+```
+
+#1. 
+```{r}
+powerdiff <-diff(powerm)
+onediff <-diff(onem)
+twodiff <- diff(twom)
+threediff <- diff(threem)
+```
+
+#2.
+```{r}
+library(astsa)
+```
+```{r}
+tsdisplay(powerm)
+tsdisplay(onem)
+tsdisplay(twom)
+tsdisplay(threem)
+tsdisplay(powerdiff)
+tsdisplay(onediff)
+tsdisplay(twodiff)
+tsdisplay(threediff)
+```
+
+#3.ccf
+```{r}
+tsmonth <-ts(powerm,frequency=52,start=c(2006,52))
+dd<-decompose(tsmonth)
+plot(dd)
+```
+
+```{r}
+ccf(as.numeric(onem), as.numeric(powerm))
+ccf(as.numeric(twom), as.numeric(powerm))
+ccf(as.numeric(threem), as.numeric(powerm))
+ccf(as.numeric(onediff), as.numeric(powerm),na.action = na.pass)
+ccf(as.numeric(twodiff), as.numeric(powerm),na.action = na.pass)
+ccf(as.numeric(threediff), as.numeric(powerm),na.action = na.pass)
+```
+
+#5.
+```{r}
+weekly<-merge(powerm,onem,twom,threem,all=c(FALSE,FALSE))
+str(weekly)
+```
+
+```{r}
+library(dynlm)
+```
+    
+```{r}
+weeklm <- dynlm(as.numeric(powerm)~L(as.numeric(onem),0)+L(as.numeric(twom),0)+L(as.numeric(threem),0),data=weekly)
+summary(weeklm)
+AIC(weeklm)
+```
+
+```{r}
+weeklm2 <- dynlm(as.numeric(powerdiff)~L(as.numeric(onediff),1)+L(as.numeric(twodiff),1)+L(as.numeric(threediff),1),data=weekly)
+summary(weeklm2)
+AIC(weeklm2)
+```
+
+#7.
+```{r}
+acf(weeklm2$residuals,lag.max=200)
+pacf(weeklm2$residuals,lag.max=200)
+```
+
+#8. auto.arima
+```{r}
+library(forecast)
+auto.arima(weeklm2$residuals,max.p=5,max.q=5)
+```
+
+```{r}
+week.arima <-arima(weeklm2$residuals,order=c(3,0,2))
+acf(week.arima$residuals)
+```
+
+#9.
+```{r}
+library(nlme)
+```
+
+```{r}
+week.gls<- gls(powerm~onem+twom+threem,data=weekly,correlation = corARMA(p=3,q=2))
+week.gls
+```
+
+```{r}
+summary(week.gls)
+```
+
+##step4-7 2nd
+```{r}
+weeklm3 <- dynlm(as.numeric(powerdiff)~L(as.numeric(onediff),1)+L(as.numeric(threediff),1),data=weekly)
+summary(weeklm3)
+AIC(weeklm3)
+```
+
+```{r}
+acf(weeklm3$residuals,lag.max=200)
+pacf(weeklm3$residuals,lag.max=200)
+```
+```{r}
+auto.arima(weeklm3$residuals,max.p=5,max.q=5)
+```
+```{r}
+week.arima1 <-arima(weeklm3$residuals,order=c(3,0,2))
+acf(week.arima1$residuals)
+```
+```{r}
+week.gls1<- gls(powerm~onem+threem,data=weekly,correlation = corARMA(p=3,q=2))
+week.gls1
+summary(week.gls1)
+```
+
+#step4-7 3rd
+
+```{r}
+weeklm4 <- dynlm(as.numeric(powerdiff)~L(as.numeric(twodiff),1)+L(as.numeric(threediff),1),data=weekly)
+summary(weeklm4)
+AIC(weeklm4)
+```
+```{r}
+acf(weeklm4$residuals,lag.max=200)
+pacf(weeklm4$residuals,lag.max=200)
+```
+```{r}
+auto.arima(weeklm4$residuals,max.p=5,max.q=5)
+```
+```{r}
+week.arima2 <-arima(weeklm4$residuals,order=c(1,0,1))
+acf(week.arima2$residuals)
+```
+
+```{r}
+week.gls2<- gls(powerm~twom+threem,data=weekly,correlation = corARMA(p=1,q=1))
+week.gls2
+summary(week.gls2)
+```
+
+#redo step 7,8 with X model
+```{r}
+acf(weeklm$residuals,lag.max=200)
+pacf(weeklm$residuals,lag.max=200)
+```
+
+```{r}
+auto.arima(weeklm$residuals,max.p=5,max.q=5)
+```
+
+Since the residaul shows seasonality, we fit a SARIMA model instead.
+
+```{r}
+library(astsa)
+spec.pgram(weeklm$residuals)
+spectrum(weeklm$residuals)
+mvspec(weeklm$residuals,spans=c(5,5),log="no")
+spec.ar(weeklm$residuals)
+```
+
+```{r}
+week.gls3<- gls(powerm~onem+twom+threem,data=weekly,correlation = corAR1(0.0294))
+week.gls3
+summary(week.gls3)
+```
+
+```{r}
+week.gls4<- gls(powerm~onem+twom+threem,data=weekly,correlation = corARMA(p=3))
+week.gls4
+summary(week.gls4)
+```
+```
+
